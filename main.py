@@ -110,7 +110,7 @@ def parse_kor_measurements(file_path):
     return pd.DataFrame()  # Return empty DataFrame if no valid data found
 
 
-def map_kor_measurements(df: pd.DataFrame, title: str):
+def map_kor_measurements(df: pd.DataFrame, title: str = "Kor Measurements"):
     fig = px.scatter_mapbox(
         df,
         lat="Lat",
@@ -140,4 +140,4 @@ def map_kor_measurements(df: pd.DataFrame, title: str):
         height=600,
     )
 
-    fig.show()
+    return fig
