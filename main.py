@@ -6,9 +6,9 @@ import plotly.express as px
 
 def rename_columns(col):
     if "LATITUDE" in col:
-        return "Lat"
+        return "Latitude"
     elif "LONGITUDE" in col:
-        return "Long"
+        return "Longitude"
     elif col.startswith("TIME "):
         return "Time"
     elif col.startswith("DATE "):
@@ -117,7 +117,7 @@ def parse_kor_measurements(file_path):
             and current_block["serial"] is not None
         ):
             data_fields = line.split(",")
-            if len(data_fields) > 4:  # Ensure it's a data line
+            if len(data_fields) > 9:  # Ensure it's a data line
                 current_block["data_lines"].append(line)
 
     # Don't forget the last block
@@ -164,8 +164,8 @@ def parse_kor_measurements(file_path):
 def map_kor_measurements(df: pd.DataFrame, title: str = "Kor Measurements"):
     fig = px.scatter_mapbox(
         df,
-        lat="Lat",
-        lon="Long",
+        lat="Latitude",
+        lon="Longitude",
         hover_data=[
             "SERIAL_NUMBER",
             "SITE_NAME",

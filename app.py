@@ -131,11 +131,12 @@ if uploaded_file is not None:
             st.subheader("🗺️ Interactive Map")
 
             # Check if we have location data
-            if "Lat" in filtered_df.columns and "Long" in filtered_df.columns:
+            if "Latitude" in filtered_df.columns and "Longitude" in filtered_df.columns:
                 # Filter out rows without valid coordinates and coordinates with value 0
-                df_with_coords = filtered_df.dropna(subset=["Lat", "Long"])
+                df_with_coords = filtered_df.dropna(subset=["Latitude", "Longitude"])
                 df_with_coords = df_with_coords[
-                    (df_with_coords["Lat"] != 0) & (df_with_coords["Long"] != 0)
+                    (df_with_coords["Latitude"] != 0)
+                    & (df_with_coords["Longitude"] != 0)
                 ]
 
                 if not df_with_coords.empty:
