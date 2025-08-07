@@ -34,30 +34,106 @@ if uploaded_file is not None:
         if not df.empty:
             st.success(f"✅ Successfully parsed {len(df)} measurements!")
 
+            # Date filtering section
+            st.subheader("📅 Filter by Date")
+
+            # Get date range from data
+            if "Activity_Date_Time" in df.columns:
+                min_date = df["Activity_Date_Time"].min()
+                max_date = df["Activity_Date_Time"].max()
+
+                # Filter type selection
+                filter_type = st.radio(
+                    "Choose filter type:",
+                    ["No Filter", "Single Date", "Date Range"],
+                    horizontal=True,
+                )
+
+                filtered_df = df.copy()
+
+                if filter_type == "Single Date":
+                    selected_date = st.date_input(
+                        "Select a date:",
+                        value=min_date.date(),
+                        min_value=min_date.date(),
+                        max_value=max_date.date(),
+                        format="MM/DD/YYYY",
+                    )
+
+                    if selected_date:
+                        # Filter for the selected date
+                        filtered_df = df[
+                            df["Activity_Date_Time"].dt.date == selected_date
+                        ]
+
+                elif filter_type == "Date Range":
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        start_date = st.date_input(
+                            "Start date:",
+                            value=min_date.date(),
+                            min_value=min_date.date(),
+                            max_value=max_date.date(),
+                            format="MM/DD/YYYY",
+                        )
+
+                    with col2:
+                        end_date = st.date_input(
+                            "End date:",
+                            value=max_date.date(),
+                            min_value=min_date.date(),
+                            max_value=max_date.date(),
+                            format="MM/DD/YYYY",
+                        )
+
+                    if start_date and end_date and start_date <= end_date:
+                        # Filter for the date range
+                        filtered_df = df[
+                            (df["Activity_Date_Time"].dt.date >= start_date)
+                            & (df["Activity_Date_Time"].dt.date <= end_date)
+                        ]
+                    elif start_date and end_date and start_date > end_date:
+                        st.error("⚠️ Start date must be before or equal to end date.")
+                        filtered_df = df  # Show all data if invalid range
+
+                # Show filter summary
+                if filter_type != "No Filter":
+                    st.info(
+                        f"📊 Showing {len(filtered_df)} measurements out of {len(df)} total"
+                    )
+
+                    if len(filtered_df) == 0:
+                        st.warning("⚠️ No measurements found for the selected date(s).")
+                        filtered_df = df  # Show all data if no results
+            else:
+                st.warning("⚠️ No Activity_Date_Time column found in the data.")
+                filtered_df = df
+
             # Display dataframe
             st.subheader("📋 Measurement Data")
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(filtered_df, use_container_width=True)
 
             # Display basic statistics
             st.subheader("📈 Data Summary")
             col1, col2, col3 = st.columns(3)
 
             with col1:
-                st.metric("Total Measurements", len(df))
+                st.metric("Total Measurements", len(filtered_df))
 
             with col2:
-                st.metric("Unique Sensors", df["SERIAL_NUMBER"].nunique())
+                st.metric("Unique Sensors", filtered_df["SERIAL_NUMBER"].nunique())
 
             with col3:
-                st.metric("Unique Sites", df["SITE_NAME"].nunique())
+                st.metric("Unique Sites", filtered_df["SITE_NAME"].nunique())
 
             # Display the map
             st.subheader("🗺️ Interactive Map")
 
             # Check if we have location data
-            if "Lat" in df.columns and "Long" in df.columns:
+            if "Lat" in filtered_df.columns and "Long" in filtered_df.columns:
                 # Filter out rows without valid coordinates and coordinates with value 0
-                df_with_coords = df.dropna(subset=["Lat", "Long"])
+                df_with_coords = filtered_df.dropna(subset=["Lat", "Long"])
                 df_with_coords = df_with_coords[
                     (df_with_coords["Lat"] != 0) & (df_with_coords["Long"] != 0)
                 ]
@@ -77,7 +153,7 @@ if uploaded_file is not None:
 
                     # Show coordinate statistics
                     st.info(
-                        f"📍 {len(df_with_coords)} measurements have valid coordinates out of {len(df)} total measurements"
+                        f"📍 {len(df_with_coords)} measurements have valid coordinates out of {len(filtered_df)} total measurements"
                     )
                 else:
                     st.warning(
@@ -98,8 +174,6 @@ if uploaded_file is not None:
         )
 
 else:
-    st.info("👆 Please upload a CSV file to get started.")
-
     # Add some helpful information
     st.markdown("---")
     st.markdown("### 📋 Expected File Format")
