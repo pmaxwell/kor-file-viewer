@@ -20,16 +20,31 @@ def rename_columns(col):
 def clean_kor_measurements(df: pd.DataFrame) -> pd.DataFrame:
     return (
         df.rename(columns=rename_columns)
+        .query("SERIAL_NUMBER != 'TBD'")
         .assign(
             Activity_Date_Time=lambda x: pd.to_datetime(x.Date + " " + x.Time),
-            Activity_Date=lambda df_: pd.to_datetime(df_["Date"], format="%m/%d/%Y"),
+            # Activity_Date=lambda df_: pd.to_datetime(df_["Date"], format="%m/%d/%Y"),
         )
         .drop(columns=["Date", "Time"])
         .astype(
             {
                 "SERIAL_NUMBER": "category",
-                "SITE_NAME": "category",
             }
+        )
+        .assign(SITE_NAME=lambda x: x["SITE_NAME"].astype("string"))
+        .pipe(
+            lambda df_: df_.reindex(
+                columns=[
+                    "Activity_Date_Time",
+                    *[
+                        col
+                        for col in df_.columns
+                        if col not in ["Activity_Date_Time", "FILE_NAME", "SITE_NAME"]
+                    ],
+                    "FILE_NAME",
+                    "SITE_NAME",
+                ]
+            )
         )
     )
 
@@ -60,9 +75,8 @@ def parse_kor_measurements(file_path):
     else:
         raise ValueError(f"Could not read file with any of the encodings: {encodings}")
 
-    clean_lines = []
-    current_serial = None
-    headers = None
+    all_data_blocks = []
+    current_block = {"serial": None, "headers": None, "data_lines": []}
 
     for line in lines:
         line = line.strip()
@@ -73,39 +87,76 @@ def parse_kor_measurements(file_path):
         if line.startswith(("MEAN VALUE:", "STANDARD DEVIATION:")):
             continue
 
+        # Start a new block when we encounter a new serial number line
         if line.startswith("SENSOR SERIAL NUMBER:"):
+            # Save the previous block if it has data
+            if current_block["headers"] and current_block["data_lines"]:
+                all_data_blocks.append(current_block)
+
+            # Start a new block
+            current_block = {"serial": None, "headers": None, "data_lines": []}
+
+            # Parse the serial number
             fields = line.split(",")
-            if len(fields) >= 6:  # Ensure we have enough fields
-                current_serial = fields[5].strip()  # 6th column (0-based index 5)
+            # Look for the first non-empty serial number starting from index 4
+            for i in range(4, min(7, len(fields))):
+                if i < len(fields) and fields[i].strip():
+                    current_block["serial"] = fields[i].strip()
+                    break
             continue
 
-        # Capture headers
+        # Capture headers for current block
         if "TIME (HH:MM:SS)" in line:
-            if len(line.strip().split(",")) == 24:
-                headers = line.strip()
+            current_block["headers"] = line.strip()
             continue
 
-        # Process data lines (they should contain commas and not start with special markers)
+        # Process data lines for current block
         if (
             "," in line
             and not line.startswith(("sep=", "Kor MEASUREMENT", "FILE CREATED:"))
-            and current_serial is not None
-        ):  # Only add lines if we have a serial number
-            # Add serial number to data line
+            and current_block["serial"] is not None
+        ):
             data_fields = line.split(",")
             if len(data_fields) > 4:  # Ensure it's a data line
-                clean_lines.append(f"{current_serial},{line}")
+                current_block["data_lines"].append(line)
 
-    if headers and clean_lines:
-        # Add SERIAL_NUMBER to headers
-        headers = f"SERIAL_NUMBER,{headers}"
+    # Don't forget the last block
+    if current_block["headers"] and current_block["data_lines"]:
+        all_data_blocks.append(current_block)
 
-        # Combine headers and data into a single string
-        csv_data = io.StringIO(f"{headers}\n" + "\n".join(clean_lines))
+    # Process each block separately and create DataFrames
+    dataframes = []
 
-        df = pd.read_csv(csv_data)
+    for block in all_data_blocks:
+        if block["headers"] and block["data_lines"]:
+            # Create CSV data for this block
+            block_csv_data = io.StringIO()
 
-        return clean_kor_measurements(df)
+            # Add headers with serial number column
+            headers_with_serial = f"SERIAL_NUMBER,{block['headers']}"
+            block_csv_data.write(f"{headers_with_serial}\n")
+
+            # Add data lines with serial number
+            for data_line in block["data_lines"]:
+                block_csv_data.write(f"{block['serial']},{data_line}\n")
+
+            # Reset position for reading
+            block_csv_data.seek(0)
+
+            # Read this block into a DataFrame
+            try:
+                block_df = pd.read_csv(block_csv_data)
+                dataframes.append(block_df)
+            except Exception as e:
+                print(
+                    f"Warning: Could not parse block with serial {block['serial']}: {e}"
+                )
+                continue
+
+    if dataframes:
+        # Concatenate all DataFrames
+        combined_df = pd.concat(dataframes, ignore_index=True)
+        return clean_kor_measurements(combined_df)
 
     return pd.DataFrame()  # Return empty DataFrame if no valid data found
 
@@ -116,7 +167,6 @@ def map_kor_measurements(df: pd.DataFrame, title: str = "Kor Measurements"):
         lat="Lat",
         lon="Long",
         hover_data=[
-            df.index,
             "SERIAL_NUMBER",
             "SITE_NAME",
             "DEPTH_M",
